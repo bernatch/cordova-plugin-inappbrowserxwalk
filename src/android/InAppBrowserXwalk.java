@@ -56,10 +56,10 @@ public class InAppBrowserXwalk extends CordovaPlugin {
 
 		if (action.equals("injectScriptCode")) {
             String jsWrapper = null;
-            if (args.getBoolean(1)) {
+            if (false) { //args.getBoolean(1), data.getString(1)?
                 jsWrapper = String.format("prompt(JSON.stringify([eval(%%s)]), 'gap-iab://%s')", callbackContext.getCallbackId());
             }
-            injectDeferredObject(args.getString(0), jsWrapper);
+            injectDeferredObject(data.getString(0), jsWrapper);
         }
 
         return true;
