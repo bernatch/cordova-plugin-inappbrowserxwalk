@@ -11,10 +11,10 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 import org.json.JSONException;
 
+import org.xwalk.core.XWalkUIClient;
 import org.xwalk.core.XWalkView;
 import org.xwalk.core.XWalkResourceClient;
-import org.xwalk.core.internal.XWalkViewInternal;
-import org.xwalk.core.internal.XWalkCookieManager;
+import org.xwalk.core.XWalkCookieManager;
 
 import android.view.View;
 import android.view.Window;
@@ -53,16 +53,69 @@ public class InAppBrowserXwalk extends CordovaPlugin {
             this.hideBrowser();
         }
 
+		if (action.equals("injectScriptCode")) {
+            String jsWrapper = null;
+            if (args.getBoolean(1)) {
+                jsWrapper = String.format("prompt(JSON.stringify([eval(%%s)]), 'gap-iab://%s')", callbackContext.getCallbackId());
+            }
+            injectDeferredObject(args.getString(0), jsWrapper);
+        }
+
         return true;
     }
 
+	private void injectDeferredObject(String source, String jsWrapper) {
+        String scriptToInject;
+        if (jsWrapper != null) {
+            org.json.JSONArray jsonEsc = new org.json.JSONArray();
+            jsonEsc.put(source);
+            String jsonRepr = jsonEsc.toString();
+            String jsonSourceString = jsonRepr.substring(1, jsonRepr.length()-1);
+            scriptToInject = String.format(jsWrapper, jsonSourceString);
+        } else {
+            scriptToInject = source;
+        }
+        final String finalScriptToInject = scriptToInject;
+        this.cordova.getActivity().runOnUiThread(new Runnable() {
+            @SuppressLint("NewApi")
+            @Override
+            public void run() {
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT) {
+                    // This action will have the side-effect of blurring the currently focused element
+                    xWalkWebView.loadUrl("javascript:" + finalScriptToInject);
+                } else {
+                    xWalkWebView.evaluateJavascript(finalScriptToInject, null);
+                }
+            }
+        });
+    }
+
     class MyResourceClient extends XWalkResourceClient {
-           MyResourceClient(XWalkView view) {
+        MyResourceClient(XWalkView view) { super(view); }
+
+        @Override
+        public void onReceivedLoadError (XWalkView view, int errorCode, String description, String failingUrl) {
+            try {
+                JSONObject obj = new JSONObject();
+                obj.put("type", "loaderror");
+                obj.put("code", errorCode);
+                obj.put("status", "failed");
+                obj.put("description", description);
+                obj.put("url", failingUrl);
+                PluginResult result = new PluginResult(PluginResult.Status.OK, obj);
+                result.setKeepCallback(true);
+                callbackContext.sendPluginResult(result);
+            } catch (JSONException ex) {}
+        }
+    }
+
+    class MyClientUI extends XWalkUIClient {
+           MyClientUI(XWalkView view) {
                super(view);
            }
 
            @Override
-           public void onLoadStarted (XWalkView view, String url) {
+           public void onPageLoadStarted (XWalkView view, String url) {
                try {
                    JSONObject obj = new JSONObject();
                    obj.put("type", "loadstart");
@@ -74,11 +127,18 @@ public class InAppBrowserXwalk extends CordovaPlugin {
            }
 
            @Override
-           public void onLoadFinished (XWalkView view, String url) {
+           public void onPageLoadStopped (XWalkView view, String url, LoadStatus status) {
                try {
+                   String code = (status == LoadStatus.FINISHED) ? "loadstop" : "loaderror";
+
                    JSONObject obj = new JSONObject();
-                   obj.put("type", "loadstop");
+                   obj.put("type", code);
                    obj.put("url", url);
+
+                   if (status != LoadStatus.FINISHED) {
+                       obj.put("status", status == LoadStatus.FAILED ? "failed": "cancelled");
+                   }
+
                    PluginResult result = new PluginResult(PluginResult.Status.OK, obj);
                    result.setKeepCallback(true);
                    callbackContext.sendPluginResult(result);
@@ -96,6 +156,7 @@ public class InAppBrowserXwalk extends CordovaPlugin {
                 XWalkCookieManager mCookieManager = new XWalkCookieManager();
                 mCookieManager.setAcceptCookie(true);
                 mCookieManager.setAcceptFileSchemeCookies(true);
+                xWalkWebView.setUIClient(new MyClientUI(xWalkWebView));
                 xWalkWebView.setResourceClient(new MyResourceClient(xWalkWebView));
                 xWalkWebView.load(url, "");
 
