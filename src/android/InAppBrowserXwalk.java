@@ -24,6 +24,7 @@ import android.widget.RelativeLayout;
 import android.widget.TextView;
 import android.graphics.Typeface;
 import android.widget.Toast;
+import android.os.Build;
 
 import android.webkit.WebResourceResponse;
 
@@ -77,12 +78,11 @@ public class InAppBrowserXwalk extends CordovaPlugin {
         }
         final String finalScriptToInject = scriptToInject;
         this.cordova.getActivity().runOnUiThread(new Runnable() {
-            @SuppressLint("NewApi")
             @Override
             public void run() {
                 if (Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT) {
                     // This action will have the side-effect of blurring the currently focused element
-                    xWalkWebView.loadUrl("javascript:" + finalScriptToInject);
+                    xWalkWebView.load("javascript:" + finalScriptToInject, null);
                 } else {
                     xWalkWebView.evaluateJavascript(finalScriptToInject, null);
                 }
